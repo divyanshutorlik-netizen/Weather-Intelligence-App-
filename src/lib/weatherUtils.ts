@@ -1,129 +1,121 @@
 import { 
   Sun, 
-  CloudSun, 
   Cloud, 
-  CloudFog, 
-  CloudDrizzle, 
   CloudRain, 
   CloudSnow, 
   CloudLightning, 
-  Sparkles,
-  LucideIcon
+  CloudDrizzle, 
+  CloudFog, 
+  LucideIcon 
 } from "lucide-react";
 
-export interface WeatherConditionInfo {
+export interface WeatherCondition {
   description: string;
   icon: LucideIcon;
-  bgColor: string; // Tailwind class for background gradient
-  accentColor: string; // Base color class
-  textColor: string;
+  bgColor: string; // Tailwind class gradient
+  accentColor: string; // text/border color
+  cardBg: string;
 }
 
-export function getWeatherCondition(code: number, isDay: boolean = true): WeatherConditionInfo {
-  // Map WMO codes
-  switch (code) {
-    case 0:
-      return {
-        description: "Clear Sky",
-        icon: Sun,
-        bgColor: isDay 
-          ? "from-amber-400 via-orange-400 to-sky-500" 
-          : "from-slate-900 via-indigo-950 to-slate-900",
-        accentColor: "text-amber-500",
-        textColor: "text-amber-600"
-      };
-    case 1:
-    case 2:
-    case 3:
-      return {
-        description: code === 1 ? "Mainly Clear" : code === 2 ? "Partly Cloudy" : "Overcast",
-        icon: CloudSun,
-        bgColor: isDay 
-          ? "from-sky-400 via-blue-300 to-slate-200" 
-          : "from-slate-800 via-slate-900 to-indigo-950",
-        accentColor: "text-blue-400",
-        textColor: "text-blue-500"
-      };
-    case 45:
-    case 48:
-      return {
-        description: "Foggy",
-        icon: CloudFog,
-        bgColor: "from-slate-300 via-zinc-400 to-slate-500",
-        accentColor: "text-zinc-500",
-        textColor: "text-zinc-600"
-      };
-    case 51:
-    case 53:
-    case 55:
-    case 56:
-    case 57:
-      return {
-        description: "Drizzle",
-        icon: CloudDrizzle,
-        bgColor: "from-blue-300 via-slate-400 to-sky-600",
-        accentColor: "text-sky-400",
-        textColor: "text-sky-500"
-      };
-    case 61:
-    case 63:
-    case 65:
-    case 66:
-    case 67:
-      return {
-        description: code === 61 ? "Light Rain" : code === 63 ? "Moderate Rain" : "Heavy Rain",
-        icon: CloudRain,
-        bgColor: "from-slate-700 via-blue-800 to-slate-900",
-        accentColor: "text-blue-500",
-        textColor: "text-blue-400"
-      };
-    case 71:
-    case 73:
-    case 75:
-    case 77:
-      return {
-        description: "Snowfall",
-        icon: CloudSnow,
-        bgColor: "from-sky-100 via-indigo-100 to-blue-200",
-        accentColor: "text-sky-300",
-        textColor: "text-sky-500"
-      };
-    case 80:
-    case 81:
-    case 82:
-      return {
-        description: "Rain Showers",
-        icon: CloudRain,
-        bgColor: "from-cyan-600 via-blue-700 to-slate-800",
-        accentColor: "text-cyan-400",
-        textColor: "text-cyan-500"
-      };
-    case 85:
-    case 86:
-      return {
-        description: "Snow Showers",
-        icon: CloudSnow,
-        bgColor: "from-blue-200 via-slate-300 to-indigo-300",
-        accentColor: "text-blue-300",
-        textColor: "text-blue-400"
-      };
-    case 95:
-    case 96:
-    case 99:
-      return {
-        description: "Thunderstorm",
-        icon: CloudLightning,
-        bgColor: "from-indigo-950 via-slate-900 to-violet-950",
-        accentColor: "text-violet-400",
-        textColor: "text-violet-500"
-      };
-    default:
-      return {
-        description: "Unknown Weather",
-        icon: Sparkles,
-        bgColor: "from-slate-800 to-zinc-900",
-        accentColor: "text-indigo-400",
-        textColor: "text-indigo-500"
-      };
+export function getWeatherCondition(code: number, isDay: boolean = true): WeatherCondition {
+  // WMO Weather interpretation codes (WW)
+  // https://open-meteo.com/en/docs
+  if (code === 0) {
+    return {
+      description: "Clear sky",
+      icon: Sun,
+      bgColor: isDay 
+        ? "from-amber-400 to-orange-500" 
+        : "from-slate-800 to-indigo-950",
+      accentColor: "text-amber-500",
+      cardBg: "bg-amber-50/10"
+    };
   }
+  
+  if (code === 1 || code === 2 || code === 3) {
+    return {
+      description: code === 1 ? "Mainly clear" : code === 2 ? "Partly cloudy" : "Overcast",
+      icon: Cloud,
+      bgColor: isDay 
+        ? "from-sky-400 to-blue-500" 
+        : "from-slate-700 to-slate-900",
+      accentColor: "text-blue-400",
+      cardBg: "bg-blue-50/10"
+    };
+  }
+
+  if (code === 45 || code === 48) {
+    return {
+      description: code === 45 ? "Foggy" : "Depositing rime fog",
+      icon: CloudFog,
+      bgColor: "from-zinc-400 to-slate-500",
+      accentColor: "text-zinc-500",
+      cardBg: "bg-zinc-50/10"
+    };
+  }
+
+  if (code === 51 || code === 53 || code === 55 || code === 56 || code === 57) {
+    return {
+      description: "Drizzle",
+      icon: CloudDrizzle,
+      bgColor: "from-cyan-400 to-sky-600",
+      accentColor: "text-cyan-500",
+      cardBg: "bg-cyan-50/10"
+    };
+  }
+
+  if (code === 61 || code === 63 || code === 65 || code === 66 || code === 67 || code === 80 || code === 81 || code === 82) {
+    return {
+      description: "Rainy",
+      icon: CloudRain,
+      bgColor: "from-blue-500 to-indigo-600",
+      accentColor: "text-blue-500",
+      cardBg: "bg-blue-50/10"
+    };
+  }
+
+  if (code === 71 || code === 73 || code === 75 || code === 77 || code === 85 || code === 86) {
+    return {
+      description: "Snowy",
+      icon: CloudSnow,
+      bgColor: "from-sky-300 to-blue-400",
+      accentColor: "text-sky-400",
+      cardBg: "bg-sky-50/10"
+    };
+  }
+
+  if (code === 95 || code === 96 || code === 99) {
+    return {
+      description: "Thunderstorm",
+      icon: CloudLightning,
+      bgColor: "from-purple-600 to-indigo-900",
+      accentColor: "text-purple-500",
+      cardBg: "bg-purple-50/10"
+    };
+  }
+
+  return {
+    description: "Unknown",
+    icon: Cloud,
+    bgColor: "from-neutral-400 to-neutral-600",
+    accentColor: "text-neutral-500",
+    cardBg: "bg-neutral-50/10"
+  };
+}
+
+export function getWindDirectionStr(degree: number): string {
+  const directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+  const index = Math.round(((degree % 360) / 22.5)) % 16;
+  return directions[index];
+}
+
+export function formatDateStr(timeStr: string): string {
+  const date = new Date(timeStr);
+  return date.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+}
+
+export function formatTimeStr(timeStr: string): string {
+  if (!timeStr) return "";
+  const date = new Date(timeStr);
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }

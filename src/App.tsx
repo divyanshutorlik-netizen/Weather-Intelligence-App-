@@ -1,75 +1,76 @@
 import { useState, useEffect, useRef, ChangeEvent } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { 
-  Search, 
-  MapPin, 
-  Wind, 
-  Droplets, 
-  Sun, 
-  CloudRain, 
-  Compass, 
-  Activity, 
-  Info, 
-  CheckCircle2, 
-  Sparkles, 
-  Cpu, 
-  Calendar, 
-  Shirt, 
-  Heart, 
-  Sunrise, 
-  Sunset,
-  ChevronRight,
-  TrendingUp,
+import {
+  Sun,
+  Cloud,
+  CloudRain,
+  CloudSnow,
   CloudLightning,
+  CloudDrizzle,
+  CloudFog,
+  Wind,
+  Compass,
+  Sunrise,
+  Sunset,
+  Calendar,
+  Droplets,
+  Activity,
+  Heart,
+  Shirt,
+  Cpu,
+  Sparkles,
+  MapPin,
+  Search,
   AlertTriangle,
   Lightbulb,
   X,
   RefreshCw,
   Clock
 } from "lucide-react";
-import { 
-  ResponsiveContainer, 
-  AreaChart, 
-  Area, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend 
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend
 } from "recharts";
 import { CityGeocode, WeatherResponse, AIRecommendations } from "./types";
-import { getWeatherCondition } from "./lib/weatherUtils";
-import { getFallbackRecommendations } from "./lib/fallbackRecommendations";
+import { getWeatherCondition, getWindDirectionStr, formatDateStr, formatTimeStr } from "./lib/weatherUtils";
+import { getWeatherRecommendations } from "./lib/weatherRecommendations";
 
-const DEFAULT_CITIES: CityGeocode[] = [
-  { id: 5128581, name: "New York", latitude: 40.7128, longitude: -74.006, country: "United States", country_code: "US" },
-  { id: 1850147, name: "Tokyo", latitude: 35.6762, longitude: 139.6503, country: "Japan", country_code: "JP" },
-  { id: 2643743, name: "London", latitude: 51.5074, longitude: -0.1278, country: "United Kingdom", country_code: "GB" },
-  { id: 2988507, name: "Paris", latitude: 48.8566, longitude: 2.3522, country: "France", country_code: "FR" },
-  { id: 2147714, name: "Sydney", latitude: -33.8688, longitude: 151.2093, country: "Australia", country_code: "AU" }
+// Preset favorite cities for instant navigation
+const FAVORITE_CITIES: CityGeocode[] = [
+  { id: 2643743, name: "London", latitude: 51.5085, longitude: -0.1257, country: "United Kingdom", country_code: "GB" },
+  { id: 5128581, name: "New York", latitude: 40.7143, longitude: -74.006, country: "United States", country_code: "US" },
+  { id: 1850147, name: "Tokyo", latitude: 35.6895, longitude: 139.6917, country: "Japan", country_code: "JP" },
+  { id: 2147714, name: "Sydney", latitude: -33.8679, longitude: 151.2073, country: "Australia", country_code: "AU" },
+  { id: 2867714, name: "Munich", latitude: 48.1374, longitude: 11.5755, country: "Germany", country_code: "DE" },
+  { id: 2988507, name: "Paris", latitude: 48.8534, longitude: 2.3488, country: "France", country_code: "FR" }
 ];
 
 export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCity, setSelectedCity] = useState<CityGeocode>(DEFAULT_CITIES[0]);
+  const [searchResults, setSearchResults] = useState<CityGeocode[]>([]);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [selectedCity, setSelectedCity] = useState<CityGeocode>(FAVORITE_CITIES[0]);
+  
   const [weatherData, setWeatherData] = useState<WeatherResponse | null>(null);
   const [aiRecommendations, setAiRecommendations] = useState<AIRecommendations | null>(null);
   
-  const [searchResults, setSearchResults] = useState<CityGeocode[]>([]);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const [loadingWeather, setLoadingWeather] = useState(true);
-  const [loadingAI, setLoadingAI] = useState(false);
-  const [aiMode, setAiMode] = useState<"ai" | "rules">("ai");
-  const [aiError, setAiError] = useState<string | null>(null);
+  // Loaders
+  const [loadingWeather, setLoadingWeather] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   
-  // Chart category states
+  // Chart Category States ("temp" for Temperature metrics, "rain" for Moisture/Rain metrics)
   const [chartMetric, setChartMetric] = useState<"temp" | "rain">("temp");
 
   const searchRef = useRef<HTMLDivElement>(null);
 
-  // Click outside search listener to close suggestions
+  // Close search dropdown on click outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
@@ -80,18 +81,22 @@ export default function App() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Initial weather load
+  useEffect(() => {
+    fetchWeather(selectedCity);
+  }, [selectedCity]);
+
   // Fetch Weather and Recommendations
-  const fetchWeather = async (city: CityGeocode, modeOverride?: "ai" | "rules") => {
+  const fetchWeather = async (city: CityGeocode) => {
     setLoadingWeather(true);
     setWeatherError(null);
-    setAiError(null);
     try {
-      // 1. Fetch real-time weather from proxy
+      // 1. Fetch weather via absolute Open-Meteo URL directly from frontend
       const weatherRes = await fetch(
-        `/api/weather?latitude=${city.latitude}&longitude=${city.longitude}&timezone=${city.timezone || "auto"}`
+        `https://api.open-meteo.com/v1/forecast?latitude=${city.latitude}&longitude=${city.longitude}&current=temperature_2m,apparent_temperature,is_day,weather_code,wind_speed_10m,wind_direction_10m,relative_humidity_2m,cloud_cover&hourly=temperature_2m,apparent_temperature,precipitation_probability,relative_humidity_2m&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max,precipitation_probability_max,wind_speed_10m_max&timezone=auto`
       );
       if (!weatherRes.ok) {
-        throw new Error("Failed to retrieve current weather metrics from server.");
+        throw new Error("Failed to retrieve current weather metrics from the meteorological server.");
       }
       const weatherJson: WeatherResponse = await weatherRes.json();
       if (!weatherJson || !weatherJson.current || !weatherJson.daily) {
@@ -99,60 +104,20 @@ export default function App() {
       }
 
       setWeatherData(weatherJson);
+      
+      // Calculate high-precision weather planning recommendations instantly on-device
+      const recs = getWeatherRecommendations(weatherJson);
+      setAiRecommendations(recs);
       setLoadingWeather(false);
-
-      // 2. Fetch AI Recommendations or rules fallback
-      const activeMode = modeOverride || aiMode;
-      if (activeMode === "ai") {
-        setLoadingAI(true);
-        try {
-          const aiRes = await fetch("/api/recommendations", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              cityName: city.name,
-              country: city.country,
-              currentWeather: weatherJson.current,
-              forecast: weatherJson.daily
-            })
-          });
-
-          if (!aiRes.ok) {
-            const errData = await aiRes.json();
-            throw new Error(errData.error || "Failed to generate AI recommendations.");
-          }
-
-          const aiData: AIRecommendations = await aiRes.json();
-          setAiRecommendations(aiData);
-        } catch (err: any) {
-          console.warn("AI generation failed, falling back to local engine:", err);
-          setAiError(err.message || "Could not retrieve Gemini Intelligence.");
-          // Fallback to rules-based automatically
-          const fallbackData = getFallbackRecommendations(city.name, weatherJson.current, weatherJson.daily);
-          setAiRecommendations(fallbackData);
-        } finally {
-          setLoadingAI(false);
-        }
-      } else {
-        // Direct rules fallback mode
-        const fallbackData = getFallbackRecommendations(city.name, weatherJson.current, weatherJson.daily);
-        setAiRecommendations(fallbackData);
-      }
 
     } catch (err: any) {
       console.error(err);
       setWeatherError(err.message || "Could not connect to the meteorological station. Please check your network.");
       setLoadingWeather(false);
-      setLoadingAI(false);
     }
   };
 
-  // Run on mount or when active city changes
-  useEffect(() => {
-    fetchWeather(selectedCity);
-  }, [selectedCity]);
-
-  // Handle live search
+  // Live query search with debounce logic
   const handleSearchChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
     setSearchQuery(val);
@@ -160,14 +125,13 @@ export default function App() {
 
     if (val.trim().length > 2) {
       try {
-        const res = await fetch(`/api/geocode?name=${encodeURIComponent(val)}`);
+        const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(val)}&count=5&language=en&format=json`);
         if (res.ok) {
           const data = await res.json();
           if (data.results && data.results.length > 0) {
             setSearchResults(data.results);
             setShowDropdown(true);
           } else {
-            setSearchResults([]);
             setSearchError(`No locations matching "${val}" were found.`);
             setShowDropdown(true);
           }
@@ -193,32 +157,7 @@ export default function App() {
     setSearchError(null);
   };
 
-  const toggleAiMode = (mode: "ai" | "rules") => {
-    setAiMode(mode);
-    if (weatherData) {
-      fetchWeather(selectedCity, mode);
-    }
-  };
-
-  // Helper for WMO wind direction
-  const getWindDirectionStr = (deg: number) => {
-    const directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
-    const val = Math.floor((deg / 22.5) + 0.5);
-    return directions[val % 16];
-  };
-
-  // Helper to format timestamps to readable strings
-  const formatTimeStr = (isoStr: string) => {
-    const date = new Date(isoStr);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
-  const formatDateStr = (isoStr: string) => {
-    const date = new Date(isoStr);
-    return date.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
-  };
-
-  const currentCondition = weatherData 
+  const currentCondition = weatherData
     ? getWeatherCondition(weatherData.current.weather_code, weatherData.current.is_day === 1)
     : getWeatherCondition(0);
 
@@ -294,39 +233,58 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#fbfbfa] text-[#1a1a19] font-sans antialiased selection:bg-amber-100 selection:text-amber-900 pb-16">
       
-      {/* 1. HEADER SECTION */}
-      <header className="border-b border-[#e2e2df] bg-white sticky top-0 z-40 backdrop-blur-md bg-white/80">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          
-          {/* Logo & Identity */}
+      {/* 1. TOP BRANDING BAR */}
+      <header className="border-b border-neutral-200 bg-white sticky top-0 z-30 shadow-xs backdrop-blur-md bg-white/90">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-neutral-900 text-white rounded-xl shadow-sm flex items-center justify-center">
-              <Sparkles className="w-5 h-5 text-amber-400 animate-pulse" />
+            <div className="w-8 h-8 rounded-lg bg-neutral-900 flex items-center justify-center text-white font-black tracking-tight text-lg">
+              W
             </div>
             <div>
-              <h1 className="text-xl font-bold tracking-tight text-neutral-900">Weather Intelligence</h1>
-              <p className="text-xs text-neutral-500 font-medium">Precision meteorology & smart activity planning</p>
+              <h1 className="text-sm font-black uppercase tracking-widest text-neutral-900">
+                Weather Intelligence
+              </h1>
+              <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">
+                ATMOSPHERIC INSIGHTS & PLANNING COGNITION
+              </p>
             </div>
           </div>
+          
+          <div className="text-right hidden md:block">
+            <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider">Met Station Status</p>
+            <p className="text-xs font-semibold text-emerald-600 flex items-center gap-1 justify-end">
+              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+              Operational Feed
+            </p>
+          </div>
+        </div>
+      </header>
 
-          {/* Interactive Search Bar */}
-          <div ref={searchRef} className="relative w-full md:max-w-md z-50">
+      {/* 2. CONTROL HUB: SEARCH & FAVORITES */}
+      <div className="bg-white border-b border-neutral-200 py-6 shadow-xs">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 lg:grid-cols-3 gap-6 items-center">
+          
+          {/* Autocomplete Search input */}
+          <div className="lg:col-span-1 relative" ref={searchRef}>
             <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-neutral-400" />
+              <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
-                id="search-city-input"
                 type="text"
                 value={searchQuery}
                 onChange={handleSearchChange}
-                placeholder="Search worldwide cities (e.g. Kyoto, Vancouver...)"
-                className="w-full pl-10 pr-4 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-sm placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-neutral-900 focus:border-transparent transition-all"
+                placeholder="Search microclimate station (e.g. London, Munich...)"
+                className="w-full pl-10 pr-4 py-2.5 bg-neutral-50 hover:bg-neutral-100/50 focus:bg-white border border-neutral-200 focus:border-neutral-800 rounded-xl text-xs font-semibold tracking-wide transition-all outline-hidden placeholder-neutral-400"
               />
               {searchQuery && (
-                <button 
-                  onClick={() => setSearchQuery("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-neutral-400 hover:text-neutral-600 rounded-full"
+                <button
+                  onClick={() => {
+                    setSearchQuery("");
+                    setSearchResults([]);
+                    setShowDropdown(false);
+                  }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-neutral-200 rounded-full transition-colors"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  <X className="w-3.5 h-3.5 text-neutral-400" />
                 </button>
               )}
             </div>
@@ -338,7 +296,7 @@ export default function App() {
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -8 }}
-                  className="absolute left-0 right-0 mt-2 bg-white border border-neutral-200 rounded-xl shadow-lg overflow-hidden max-h-60 overflow-y-auto"
+                  className="absolute left-0 right-0 mt-2 bg-white border border-neutral-200 rounded-xl shadow-lg overflow-hidden max-h-60 overflow-y-auto z-40"
                 >
                   {searchError ? (
                     <div className="p-4 text-center text-xs text-neutral-500 font-medium flex flex-col items-center gap-1">
@@ -350,7 +308,7 @@ export default function App() {
                       <button
                         key={city.id}
                         onClick={() => selectCity(city)}
-                        className="w-full px-4 py-3 text-left text-sm hover:bg-neutral-50 border-b border-neutral-100 last:border-0 flex items-center justify-between transition-colors"
+                        className="w-full px-4 py-3 text-left text-sm hover:bg-neutral-50 border-b border-neutral-100 last:border-0 flex items-center justify-between transition-colors cursor-pointer"
                       >
                         <div className="flex items-center gap-2">
                           <MapPin className="w-4 h-4 text-neutral-400 shrink-0" />
@@ -369,30 +327,30 @@ export default function App() {
               )}
             </AnimatePresence>
           </div>
-        </div>
-      </header>
 
-      {/* 2. CHIP NAVIGATION / FAVS BAR */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
-          <span className="text-xs font-semibold text-neutral-400 uppercase tracking-wider shrink-0 mr-1">Favorites:</span>
-          {DEFAULT_CITIES.map((city) => {
-            const isActive = selectedCity.id === city.id;
-            return (
-              <button
-                key={city.id}
-                id={`fav-city-${city.name.toLowerCase()}`}
-                onClick={() => selectCity(city)}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all border shrink-0 ${
-                  isActive
-                    ? "bg-neutral-900 text-white border-neutral-900 shadow-sm"
-                    : "bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50 hover:border-neutral-300"
-                }`}
-              >
-                {city.name}
-              </button>
-            );
-          })}
+          {/* Favorites quick links */}
+          <div className="lg:col-span-2 flex flex-wrap items-center gap-2">
+            <span className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider mr-2">
+              QUICK PINS
+            </span>
+            {FAVORITE_CITIES.map((city) => {
+              const isActive = selectedCity.id === city.id;
+              return (
+                <button
+                  key={city.id}
+                  onClick={() => selectCity(city)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold tracking-wide border transition-all cursor-pointer ${
+                    isActive
+                      ? "bg-neutral-900 border-neutral-900 text-white shadow-xs"
+                      : "bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100 hover:border-neutral-300"
+                  }`}
+                >
+                  {city.name}
+                </button>
+              );
+            })}
+          </div>
+
         </div>
       </div>
 
@@ -425,7 +383,7 @@ export default function App() {
           <div className="lg:col-span-1 flex flex-col gap-8">
             
             {/* A. CURRENT WEATHER HERO CARD */}
-            <section id="current-weather-card" className="bg-white rounded-2xl border border-neutral-200 overflow-hidden shadow-sm flex flex-col h-fit">
+            <section id="current-weather-card" className="bg-white rounded-2xl border border-neutral-200 overflow-hidden shadow-sm flex flex-col h-fit animate-fade-in">
               {loadingWeather ? (
                 <div className="p-8 animate-pulse flex flex-col gap-4">
                   <div className="h-6 bg-neutral-200 rounded w-1/3"></div>
@@ -463,7 +421,7 @@ export default function App() {
                           <span className="text-2xl font-light">°C</span>
                         </div>
                         <p className="text-sm font-semibold tracking-wide text-white/90 mt-1 flex items-center gap-1.5">
-                          <currentCondition.icon className="w-5 h-5 shrink-0" />
+                          <currentCondition.icon className="w-5 h-5 shrink-0 animate-bounce" />
                           {currentCondition.description}
                         </p>
                       </div>
@@ -608,14 +566,14 @@ export default function App() {
                   </div>
                   <div>
                     <h3 className="text-sm font-bold text-neutral-800 uppercase tracking-tight">24-Hour Microclimate Trends</h3>
-                    <p className="text-[11px] text-neutral-400 font-semibold">Interactive charting of upcoming atmosphere metrics</p>
+                    <p className="text-[11px] text-neutral-400 font-semibold">Interactive charting of upcoming atmospheric metrics</p>
                   </div>
                 </div>
 
                 <div className="flex bg-neutral-100 p-1 rounded-xl border border-neutral-200 w-fit self-start sm:self-auto">
                   <button
                     onClick={() => setChartMetric("temp")}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       chartMetric === "temp"
                         ? "bg-white text-neutral-800 shadow-xs"
                         : "text-neutral-500 hover:text-neutral-800"
@@ -625,7 +583,7 @@ export default function App() {
                   </button>
                   <button
                     onClick={() => setChartMetric("rain")}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       chartMetric === "rain"
                         ? "bg-white text-neutral-800 shadow-xs"
                         : "text-neutral-500 hover:text-neutral-800"
@@ -684,7 +642,7 @@ export default function App() {
                           borderColor: "#1a1a19", 
                           borderRadius: "12px", 
                           color: "#ffffff",
-                          fontSize: "12px",
+                          fontSize: "11px",
                           fontWeight: "600",
                           boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
                         }} 
@@ -706,7 +664,7 @@ export default function App() {
                             dataKey="feelsLike" 
                             name="Feels Like (°C)" 
                             stroke="#3b82f6" 
-                            strokeWidth={2}
+                            strokeWidth={1.5}
                             fillOpacity={1} 
                             fill="url(#colorFeels)" 
                           />
@@ -716,7 +674,7 @@ export default function App() {
                           <Area 
                             type="monotone" 
                             dataKey="precipitationProb" 
-                            name="Precipitation Prob (%)" 
+                            name="Rain Prob (%)" 
                             stroke="#06b6d4" 
                             strokeWidth={2}
                             fillOpacity={1} 
@@ -727,7 +685,7 @@ export default function App() {
                             dataKey="humidity" 
                             name="Humidity (%)" 
                             stroke="#10b981" 
-                            strokeWidth={2}
+                            strokeWidth={1.5}
                             fillOpacity={1} 
                             fill="url(#colorHumid)" 
                           />
@@ -736,75 +694,29 @@ export default function App() {
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>
-              ) : (
-                <div className="h-64 flex items-center justify-center text-xs text-neutral-400">
-                  Hourly trends data unavailable.
-                </div>
-              )}
+              ) : null}
             </section>
 
-            {/* AI SUITE CONTROLLER BAR */}
+            {/* ATMOSPHERIC INTELLIGENCE ENGINE */}
             <div className="bg-white rounded-2xl border border-neutral-200 p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3">
-                <div className="p-2 bg-purple-50 text-purple-700 rounded-xl flex items-center justify-center">
-                  <Cpu className="w-5 h-5" />
+                <div className="p-2 bg-neutral-950 text-white rounded-xl flex items-center justify-center">
+                  <Compass className="w-5 h-5 animate-spin" style={{ animationDuration: "12s" }} />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-neutral-800">Meteorological Intelligence Engine</h3>
-                  <p className="text-[11px] text-neutral-500">Select model algorithm style for recommendations</p>
+                  <h3 className="text-sm font-bold text-neutral-800">Weather Planning Intelligence</h3>
+                  <p className="text-[11px] text-neutral-500 font-medium">High-precision computed recommendations and environmental safety analytics</p>
                 </div>
               </div>
-
-              <div className="flex bg-neutral-100 p-1.5 rounded-xl border border-neutral-200">
-                <button
-                  id="ai-mode-gemini"
-                  onClick={() => toggleAiMode("ai")}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    aiMode === "ai"
-                      ? "bg-white text-purple-700 shadow-xs"
-                      : "text-neutral-500 hover:text-neutral-800"
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-                  Gemini 3.5 AI
-                </button>
-                <button
-                  id="ai-mode-rules"
-                  onClick={() => toggleAiMode("rules")}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                    aiMode === "rules"
-                      ? "bg-white text-neutral-800 shadow-xs"
-                      : "text-neutral-500 hover:text-neutral-800"
-                  }`}
-                >
-                  <Compass className="w-3.5 h-3.5 text-neutral-500 shrink-0" />
-                  Bespoke Rules
-                </button>
+              <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-800 px-3 py-1.5 rounded-xl border border-emerald-100 text-xs font-bold">
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
+                Secure Offline Model
               </div>
             </div>
 
-            {/* AI CONTENT AREA */}
+            {/* INTEL CONTENT AREA */}
             <AnimatePresence mode="wait">
-              {loadingAI ? (
-                <motion.div 
-                  key="ai-loading"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="bg-white rounded-2xl border border-neutral-200 p-8 shadow-sm flex flex-col items-center justify-center text-center min-h-[400px] gap-4"
-                >
-                  <div className="relative">
-                    <div className="w-16 h-16 border-4 border-purple-100 border-t-purple-600 rounded-full animate-spin"></div>
-                    <Sparkles className="w-6 h-6 text-purple-500 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 animate-pulse" />
-                  </div>
-                  <div>
-                    <h4 className="text-base font-bold text-neutral-800">Analyzing Atmospheric Conditions...</h4>
-                    <p className="text-xs text-neutral-500 max-w-sm mt-1">
-                      Gemini AI is parsing temperature peaks, barometric gradients, and precipitation models to generate clothing and planning suggestions.
-                    </p>
-                  </div>
-                </motion.div>
-              ) : aiRecommendations ? (
+              {aiRecommendations ? (
                 <motion.div
                   key="ai-content"
                   initial={{ opacity: 0, y: 12 }}
@@ -815,54 +727,44 @@ export default function App() {
                 >
                   {/* 1. EDITORIAL SUMMARY BOX */}
                   <section id="intelligence-summary" className="relative bg-white rounded-2xl border border-neutral-200 p-6 shadow-xs overflow-hidden">
-                    {/* Subtle decorative elements */}
                     <div className="absolute top-0 right-0 p-3">
-                      <span className="text-[10px] bg-purple-50 text-purple-700 font-bold uppercase tracking-wider px-2.5 py-1 rounded-md flex items-center gap-1">
-                        <Sparkles className="w-3 h-3 text-purple-500" />
+                      <span className="text-[10px] bg-neutral-900 text-white font-bold uppercase tracking-wider px-2.5 py-1 rounded-md flex items-center gap-1">
+                        <Compass className="w-3 h-3" />
                         Intelligence Summary
                       </span>
                     </div>
-                    {aiError && (
-                      <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2 text-xs text-amber-800">
-                        <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                        <div>
-                          <span className="font-bold">Offline Fallback Mode:</span> Could not connect to Gemini server. Displaying high-precision calculated recommendations instead. Add GEMINI_API_KEY in Secrets panel to unlock.
-                        </div>
-                      </div>
-                    )}
                     <div className="max-w-2xl mt-4">
-                      <p className="text-base font-medium text-neutral-800 leading-relaxed italic">
+                      <p className="text-sm font-semibold text-neutral-700 leading-relaxed italic">
                         "{aiRecommendations.summary}"
                       </p>
                     </div>
                   </section>
 
-                  {/* 2. CLOTHING & OUTDOOR ACTIVITIES BENTO ROW (COLOR-CODED RECOMMENDATION CARDS) */}
+                  {/* 2. CLOTHING & OUTDOOR ACTIVITIES BENTO ROW */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     
-                    {/* Clothing Outfits Planner (Dynamic color-coding based on temperatures) */}
-                    <section 
-                      id="clothing-planner" 
-                      className={`rounded-2xl border p-6 shadow-sm flex flex-col gap-5 transition-all duration-300 ${clothingStyle.bg} ${clothingStyle.border}`}
-                    >
-                      <div className="flex items-center gap-2.5 border-b border-neutral-200/50 pb-3">
-                        <div className="p-1.5 bg-amber-500/10 text-amber-700 rounded-lg">
-                          <Shirt className="w-4.5 h-4.5" />
+                    {/* Clothing Outfits Planner */}
+                    <section id="clothing-planner" className={`rounded-2xl border p-6 shadow-sm flex flex-col gap-5 transition-all ${clothingStyle.bg} ${clothingStyle.border}`}>
+                      <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-1.5 bg-neutral-900/5 text-neutral-800 rounded-lg">
+                            <Shirt className="w-4.5 h-4.5" />
+                          </div>
+                          <h4 className="text-sm font-bold text-neutral-800 uppercase tracking-tight">Outfits & Layering</h4>
                         </div>
-                        <h4 className="text-sm font-bold text-neutral-800 uppercase tracking-tight">Outfits & Layering Planner</h4>
-                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ml-auto ${clothingStyle.badge}`}>
-                          Comfort Adaptive
+                        <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded ${clothingStyle.badge}`}>
+                          THERMAL ACCLIMATIZATION
                         </span>
                       </div>
 
                       <div className="flex flex-col gap-4">
                         <div>
                           <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider mb-2">Recommended Essentials</p>
-                          <div className="flex flex-wrap gap-2">
+                          <div className="flex flex-wrap gap-1.5">
                             {aiRecommendations.clothingAdvice.essentials.map((item, i) => (
                               <span 
                                 key={i} 
-                                className="px-3 py-1 bg-white border border-neutral-100 text-neutral-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-2xs"
+                                className="px-2.5 py-1 bg-white border border-neutral-200 text-neutral-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 shadow-2xs"
                               >
                                 <span className="w-1.5 h-1.5 bg-neutral-400 rounded-full"></span>
                                 {item}
@@ -873,40 +775,39 @@ export default function App() {
 
                         <div>
                           <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider mb-1">Footwear Guidance</p>
-                          <p className="text-xs font-semibold text-neutral-700 bg-white border border-neutral-100 p-3 rounded-xl shadow-2xs">
+                          <p className="text-xs font-semibold text-neutral-700 bg-white border border-neutral-100 p-3 rounded-xl shadow-2xs leading-relaxed">
                             {aiRecommendations.clothingAdvice.footwear}
                           </p>
                         </div>
 
-                        <div className="mt-2 p-3 bg-amber-50/50 border border-amber-100/60 rounded-xl flex items-start gap-2.5">
-                          <Lightbulb className="w-4.5 h-4.5 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="mt-2 p-3 bg-white/60 border border-neutral-100 rounded-xl flex items-start gap-2.5">
+                          <Lightbulb className="w-4.5 h-4.5 text-amber-500 shrink-0 mt-0.5" />
                           <div>
-                            <p className="text-[10px] text-amber-800 font-bold uppercase tracking-wider">Atmospheric Style Tip</p>
-                            <p className="text-xs text-neutral-600 mt-0.5 leading-relaxed">{aiRecommendations.clothingAdvice.tip}</p>
+                            <p className="text-[10px] text-neutral-500 font-bold uppercase tracking-wider">Atmospheric Style Tip</p>
+                            <p className="text-xs text-neutral-600 mt-0.5 leading-relaxed font-semibold">{aiRecommendations.clothingAdvice.tip}</p>
                           </div>
                         </div>
                       </div>
                     </section>
 
-                    {/* Health Alerts & Sun Safety (Dynamic color-coding based on UV indices) */}
-                    <section 
-                      id="health-safety" 
-                      className={`rounded-2xl border p-6 shadow-sm flex flex-col gap-5 transition-all duration-300 ${healthStyle.bg} ${healthStyle.border}`}
-                    >
-                      <div className="flex items-center gap-2.5 border-b border-neutral-200/50 pb-3">
-                        <div className="p-1.5 bg-rose-500/10 text-rose-700 rounded-lg">
-                          <Heart className="w-4.5 h-4.5" />
+                    {/* Health Alerts & Sun Safety */}
+                    <section id="health-safety" className={`rounded-2xl border p-6 shadow-sm flex flex-col gap-5 transition-all ${healthStyle.bg} ${healthStyle.border}`}>
+                      <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="p-1.5 bg-neutral-900/5 text-neutral-800 rounded-lg">
+                            <Heart className="w-4.5 h-4.5" />
+                          </div>
+                          <h4 className="text-sm font-bold text-neutral-800 uppercase tracking-tight">Clinical Health & Sun Safety</h4>
                         </div>
-                        <h4 className="text-sm font-bold text-neutral-800 uppercase tracking-tight">Health & Sun Safety</h4>
-                        <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ml-auto ${healthStyle.badge}`}>
-                          Risk Index Check
+                        <span className={`text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded ${healthStyle.badge}`}>
+                          BIOCLIMATIC ALERT
                         </span>
                       </div>
 
                       <div className="flex flex-col gap-4">
                         <div>
                           <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider mb-1">UV Protection Alert</p>
-                          <p className="text-xs font-semibold text-neutral-700 bg-white border border-neutral-100 p-3 rounded-xl flex items-start gap-2 shadow-2xs">
+                          <p className="text-xs font-semibold text-neutral-700 bg-white border border-neutral-100 p-3 rounded-xl flex items-start gap-2 shadow-2xs leading-relaxed">
                             <Sun className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
                             <span>{aiRecommendations.healthAlerts.uvAlert}</span>
                           </p>
@@ -914,7 +815,7 @@ export default function App() {
 
                         <div>
                           <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider mb-1">Recommended Hydration Target</p>
-                          <p className="text-xs font-semibold text-neutral-700 bg-white border border-neutral-100 p-3 rounded-xl flex items-start gap-2 shadow-2xs">
+                          <p className="text-xs font-semibold text-neutral-700 bg-white border border-neutral-100 p-3 rounded-xl flex items-start gap-2 shadow-2xs leading-relaxed">
                             <Droplets className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />
                             <span>{aiRecommendations.healthAlerts.hydration}</span>
                           </p>
@@ -922,11 +823,11 @@ export default function App() {
 
                         <div>
                           <p className="text-[10px] text-neutral-400 font-bold uppercase tracking-wider mb-2">General Precautions</p>
-                          <ul className="flex flex-col gap-1.5">
+                          <ul className="flex flex-col gap-2">
                             {aiRecommendations.healthAlerts.precautions.map((item, i) => (
-                              <li key={i} className="text-xs text-neutral-600 flex items-start gap-2">
+                              <li key={i} className="text-xs text-neutral-600 flex items-start gap-2 font-semibold">
                                 <span className="text-rose-500 text-lg leading-none select-none">•</span>
-                                <span className="font-medium">{item}</span>
+                                <span className="leading-relaxed">{item}</span>
                               </li>
                             ))}
                           </ul>
@@ -943,36 +844,31 @@ export default function App() {
                         <div className="p-1.5 bg-emerald-50 text-emerald-700 rounded-lg">
                           <Activity className="w-4.5 h-4.5" />
                         </div>
-                        <h4 className="text-sm font-bold text-neutral-800 uppercase tracking-tight">Outdoor Activity Suitability</h4>
+                        <h4 className="text-sm font-bold text-neutral-800 uppercase tracking-tight">Outdoor Activity Suitability Index</h4>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {aiRecommendations.activities.map((act, i) => {
-                        const isHighlyRec = act.suitability.toLowerCase().includes("highly");
-                        const isIndoor = act.suitability.toLowerCase().includes("indoor");
+                        const isHighlyRec = act.suitability.toLowerCase().includes("highly") || act.suitability.toLowerCase().includes("excellent");
+                        const isIndoor = act.suitability.toLowerCase().includes("indoor") || act.suitability.toLowerCase().includes("challenging");
                         
-                        let badgeColor = "bg-neutral-100 text-neutral-700 border-neutral-200";
+                        let badgeColor = "bg-amber-50 text-amber-700 border-amber-100";
                         if (isHighlyRec) badgeColor = "bg-emerald-50 text-emerald-700 border-emerald-100";
                         else if (isIndoor) badgeColor = "bg-rose-50 text-rose-700 border-rose-100";
 
                         return (
-                          <div key={i} className="p-4 border border-neutral-100 rounded-xl hover:border-neutral-200 transition-colors bg-neutral-50/30 flex flex-col justify-between">
+                          <div key={i} className="p-4 border border-neutral-100 rounded-xl hover:border-neutral-200 transition-colors bg-neutral-50/30 flex flex-col justify-between shadow-2xs">
                             <div>
-                              <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center justify-between gap-2 border-b border-neutral-100 pb-2 mb-2">
                                 <span className="text-xs font-bold text-neutral-800">{act.name}</span>
-                                <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${badgeColor}`}>
+                                <span className={`text-[9px] px-2.5 py-0.5 rounded-full font-bold border uppercase tracking-wider ${badgeColor}`}>
                                   {act.suitability}
                                 </span>
                               </div>
-                              <p className="text-xs text-neutral-500 mt-2 leading-relaxed font-medium">
+                              <p className="text-xs text-neutral-500 font-medium leading-relaxed">
                                 {act.reason}
                               </p>
-                            </div>
-                            
-                            <div className="mt-4 pt-2.5 border-t border-neutral-100 text-[11px] text-neutral-400 font-bold uppercase tracking-wider flex items-center justify-between">
-                              <span>Best timing:</span>
-                              <span className="text-neutral-700 lowercase font-semibold first-letter:uppercase">{act.bestTime}</span>
                             </div>
                           </div>
                         );
@@ -980,57 +876,62 @@ export default function App() {
                     </div>
                   </section>
 
-                  {/* 4. WEEKLY METEOROLOGICAL INTELLIGENCE TIMELINE */}
-                  <section id="weekly-timeline" className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-sm flex flex-col gap-6">
-                    <div className="flex items-center justify-between border-b border-neutral-100 pb-3">
+                  {/* 4. WEEKLY OUTDOOR READINESS TIMELINE */}
+                  <section id="weekly-readiness-timeline" className="bg-white rounded-2xl border border-neutral-200 p-6 shadow-sm flex flex-col gap-6">
+                    <div className="border-b border-neutral-100 pb-3">
                       <div className="flex items-center gap-2.5">
-                        <div className="p-1.5 bg-blue-50 text-blue-700 rounded-lg">
-                          <TrendingUp className="w-4.5 h-4.5" />
+                        <div className="p-1.5 bg-amber-50 text-amber-700 rounded-lg">
+                          <Calendar className="w-4.5 h-4.5" />
                         </div>
-                        <h4 className="text-sm font-bold text-neutral-800 uppercase tracking-tight">Outdoor Readiness Timeline</h4>
+                        <h4 className="text-sm font-bold text-neutral-800 uppercase tracking-tight">Weekly Outdoor Readiness Forecast</h4>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4">
-                      {aiRecommendations.dailyIntelligence.map((day, idx) => {
-                        const score = day.activityScore;
+                    <div className="flex flex-col gap-4">
+                      {aiRecommendations.weeklyReadiness.map((day, idx) => {
+                        // Color ranges for score
+                        let scoreColor = "text-emerald-600 bg-emerald-50";
+                        let progressColor = "bg-emerald-500";
                         
-                        let barColor = "bg-emerald-500";
-                        let textColor = "text-emerald-700";
-                        let ringBg = "bg-emerald-50";
-
-                        if (score < 40) {
-                          barColor = "bg-rose-500";
-                          textColor = "text-rose-700";
-                          ringBg = "bg-rose-50";
-                        } else if (score < 70) {
-                          barColor = "bg-amber-500";
-                          textColor = "text-amber-700";
-                          ringBg = "bg-amber-50";
+                        if (day.score < 55) {
+                          scoreColor = "text-rose-600 bg-rose-50";
+                          progressColor = "bg-rose-500";
+                        } else if (day.score < 80) {
+                          scoreColor = "text-amber-600 bg-amber-50";
+                          progressColor = "bg-amber-500";
                         }
 
                         return (
                           <div 
                             key={idx} 
-                            className="flex flex-col items-center justify-between p-3.5 border border-neutral-100 hover:border-neutral-200 rounded-xl text-center bg-[#fbfbfa] transition-all hover:shadow-xs group relative"
+                            className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border border-neutral-100 rounded-xl hover:border-neutral-200 hover:bg-neutral-50/50 transition-all gap-4"
                           >
-                            <div>
-                              <p className="text-xs font-bold text-neutral-700">{day.day}</p>
-                              <p className="text-[10px] text-neutral-400 font-medium">{formatDateStr(day.date)}</p>
-                            </div>
-
-                            <div className="my-4 relative flex items-center justify-center">
-                              {/* Circular progress container */}
-                              <div className={`w-14 h-14 rounded-full flex flex-col items-center justify-center ${ringBg} border border-neutral-100`}>
-                                <span className={`text-base font-black ${textColor}`}>{score}</span>
-                                <span className="text-[7px] font-bold text-neutral-400 uppercase tracking-wider leading-none">Score</span>
+                            <div className="flex items-center gap-4">
+                              {/* Radial Score Indicator */}
+                              <div className={`w-12 h-12 rounded-full flex flex-col items-center justify-center font-bold text-xs shrink-0 shadow-2xs ${scoreColor}`}>
+                                <span className="text-[10px] text-neutral-400 font-bold tracking-tighter leading-none">SCORE</span>
+                                <span className="text-sm font-black tracking-tight">{day.score}</span>
+                              </div>
+                              
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold text-neutral-800">{day.date}</span>
+                                  <span className={`text-[9px] px-1.5 py-0.2 rounded font-extrabold uppercase tracking-wide border border-transparent ${scoreColor}`}>
+                                    {day.label}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-neutral-500 mt-1 font-semibold leading-relaxed">
+                                  {day.summary}
+                                </p>
                               </div>
                             </div>
 
-                            <div className="w-full">
-                              <p className="text-[10px] text-neutral-500 leading-tight line-clamp-2 font-semibold">
-                                {day.briefRecommendation}
-                              </p>
+                            {/* Progress Visual Bar */}
+                            <div className="w-full sm:w-32 bg-neutral-100 h-2 rounded-full overflow-hidden shrink-0">
+                              <div 
+                                className={`h-full rounded-full transition-all duration-700 ${progressColor}`} 
+                                style={{ width: `${day.score}%` }}
+                              ></div>
                             </div>
                           </div>
                         );
@@ -1050,4 +951,3 @@ export default function App() {
     </div>
   );
 }
-
