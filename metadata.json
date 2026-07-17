@@ -1,0 +1,6 @@
+{
+  "name": "Weather Intelligence",
+  "description": "A polished weather dashboard with real-time current weather, 7-day forecast, and AI-powered intelligence planning recommendations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
